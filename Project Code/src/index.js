@@ -1,283 +1,153 @@
-/*
-Section 1: Import the necessary dependencies. Remember to check what each dependency does.
-Section 2: Connect to DB: Initialize a dbConfig variable that specifies the connection information for the database. The variables in the .env file can be accessed by using process.env.POSTGRES_DB, process.env.POSTGRES_USER, process.env.POSTGRES_PASSWORD and process.env.API_KEY.
-Section 3: App Settings
-Section 4: This is where you will add the implementation for all your API routes
-Section 5: Starting the server and keeping it active.
-
-*/
-
 // *****************************************************
 // <!-- Section 1 : Import Dependencies -->
 // *****************************************************
 
-const express = require('express'); // To build an application server or API
+const express = require('express');
 const app = express();
-const pgp = require('pg-promise')(); // To connect to the Postgres DB from the node server
+const pgp = require('pg-promise')();
 const bodyParser = require('body-parser');
-const session = require('express-session'); // To set the session object. To store or access session data, use the `req.session`, which is (generally) serialized as JSON by the store.
-const bcrypt = require('bcrypt'); //  To hash passwords
-const axios = require('axios'); // To make HTTP requests from our server. We'll know more about it in Part B.
-const { request } = require('chai');
+const bcrypt = require('bcrypt');
+const axios = require('axios');
+const session = require('express-session');
 
 // *****************************************************
 // <!-- Section 2 : Connect to DB -->
 // *****************************************************
 
-// database configuration
 const dbConfig = {
- host: 'db', // the database server
- port: 5432, // the database port
- database: process.env.POSTGRES_DB, // the database name
- user: process.env.POSTGRES_USER, // the user account to connect with
- password: process.env.POSTGRES_PASSWORD, // the password of the user account
+  host: 'localhost',
+  port: 5432,
+  database: 'stock_sensei',
+  user: 'postgres',
+  password: '2NLH&1plo!',
 };
 
 const db = pgp(dbConfig);
 
-// test your database
 db.connect()
- .then(obj => {
-   console.log('Database connection successful'); // you can view this message in the docker compose logs
-   obj.done(); // success, release the connection;
- })
- .catch(error => {
-   console.log('ERROR:', error.message || error);
- });
+  .then(obj => {
+    console.log('Database connection successful');
+    obj.done();
+  })
+  .catch(error => {
+    console.log('ERROR:', error.message || error);
+  });
 
 // *****************************************************
 // <!-- Section 3 : App Settings -->
 // *****************************************************
 
-app.set('view engine', 'ejs'); // set the view engine to EJS
-app.use(bodyParser.json()); // specify the usage of JSON for parsing request body.
+app.set('view engine', 'ejs');
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
-// initialize session variables
-app.use(
- session({
-   secret: process.env.SESSION_SECRET,
-   saveUninitialized: false,
-   resave: false,
- })
-);
-
-app.use(
- bodyParser.urlencoded({
-   extended: true,
- })
-);
-
-app.use( express.static( "public" ) );
+// Configure sessions
+app.use(session({
+  secret: 'your_secret_key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }
+}));
 
 // *****************************************************
-// <!-- Section 4 : API Routes -->
+// <!-- Section 4 : Authentication Middleware -->
 // *****************************************************
 
-app.get('/', (req, res) => {
- res.render('pages/landing')
-});
+const auth = (req, res, next) => {
+  if (!req.session.user) {
+    return res.redirect('/login');
+  }
+  next();
+};
 
-app.get('/welcome', (req, res) => {
-  res.json({ status: 'success', message: 'Welcome!' });
-});
-app.get('/intro', (req, res) => {
-  res.render('pages/intro')
- });
+// *****************************************************
+// <!-- Section 5 : API Routes -->
+// *****************************************************
 
- app.get('/fundamentals', (req, res) => {
-  res.render('pages/fundamentals')
- });
-
- app.get('/technical', (req, res) => {
-  res.render('pages/technical')
- });
-
- app.get('/portfolio', (req, res) => {
-  res.render('pages/portfolio')
- });
-
- app.get('/quiz', (req, res) => {
-  res.render('pages/quiz')
- });
-
- app.get('/home', async (req, res) => {
+app.get('/', (req, res) => res.render('pages/landing'));
+app.get('/home', auth, async (req, res) => {
   try {
-    const apiKey = 'cl9s089r01qk1fmlilp0cl9s089r01qk1fmlilpg'; 
-    const marketStatusResponse = await axios.get('https://finnhub.io/api/v1/stock/market-status', {
-      params: {
-        exchange: 'US',
-        token: apiKey,
-      },
-    });
+    // Sample data for marketStatus
+    const marketStatus = {
+      exchange: "NYSE",
+      session: "Pre-market",
+      isOpen: true
+    };
 
-    const marketStatus = marketStatusResponse.data;
-    const newsResponse = await axios.get('https://finnhub.io/api/v1/news', {
-      params: {
-        token: apiKey,
-        category: 'general',
-        minId: 0,
-        size: 3,
-      },
-    });
+    const marketNews = [
+      { headline: "Sample News 1", image: "sample1.jpg", summary: "Sample summary 1" },
+      { headline: "Sample News 2", image: "sample2.jpg", summary: "Sample summary 2" },
+    ];
 
-    const stockResponseAAPL = await axios.get('https://finnhub.io/api/v1/quote?symbol=AAPL', {
-      params: {
-        token: apiKey,
-        symbol: 'AAPL',
-      },
-    });
-    const stockResponseTSLA = await axios.get('https://finnhub.io/api/v1/quote?symbol=TSLA', {
-      params: {
-        token: apiKey,
-        symbol: 'TSLA',
-      },
-    });
-    const stockResponseMSFT = await axios.get('https://finnhub.io/api/v1/quote?symbol=MSFT', {
-      params: {
-        token: apiKey,
-        symbol: 'MSFT',
-      },
-    });
- 
-    const tsla = stockResponseTSLA.data;
-    const aapl = stockResponseAAPL.data;
-    const msft = stockResponseMSFT.data;
+    // Sample stock data for aapl, tsla, msft
+    const aapl = { c: 150.23, d: 1.25 };
+    const tsla = { c: 720.54, d: -10.18 };
+    const msft = { c: 299.87, d: 0.67 };
 
-    const marketNews = newsResponse.data;
-    const formattedNews = marketNews.map(news => {
-      return {
-        headline: news.headline,
-        image: news.image,
-        summary: news.summary,
-      };
-    });
+    const accountBalanceQuery = await db.oneOrNone(
+      `SELECT COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END) -
+               SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) AS account_balance 
+       FROM Transactions t WHERE t.user_id = $1;`, 
+      [req.session.user.user_id]
+    );
 
-    const result = await db.query(`
-        SELECT
-            COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END), 0) -
-            COALESCE(SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) AS account_balance
-        FROM
-            Transactions t
-        WHERE
-            t.user_id = $1;
-    `, [req.session.user.user_id]);
+    const accountBalance = (accountBalanceQuery?.account_balance || 0) + 50000;
 
-    let accountBalance = result.account_balance;
-    if (accountBalance == null) accountBalance = 0;
-    accountBalance = accountBalance + 50000;
-
-    res.render('pages/home', { user: req.session.user, accountBalance, events: formattedNews, marketStatus, tsla, aapl, msft});
-} catch (error) {
+    res.render('pages/home', { user: req.session.user, accountBalance, events: marketNews, marketStatus, aapl, tsla, msft });
+  } catch (error) {
     console.error('Error fetching data:', error.message);
     res.status(500).send('Internal Server Error');
-}
- });
- 
-
-app.get('/register', (req,res) => {
- //register
- res.render('pages/register')
-});
-app.get('/login', (req, res) => {
-  const username = req.body
-  const password = req.body
-  res.render('pages/login');
-});
-
-app.get('/account', async (req, res) => {
-  try {
-    const result = await db.query(`
-      SELECT
-        COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) AS account_balance
-      FROM
-        Transactions t
-      WHERE
-        t.user_id = $1;
-    `, [req.session.user.user_id]);
-
-    let accountBalance = result.account_balance;
-    if(accountBalance == null) accountBalance = 0;
-    accountBalance = accountBalance + 50000;
-
-    res.render('pages/account', {user: req.session.user, accountBalance });
-  } catch (err) {
-    console.error('Error executing query', err);
-    res.status(500).send('Internal Server Error');
   }
 });
 
- app.get('/learn', async (req,res) => {
-  try {
-    const apiKey = 'clkkmapr01qkcrcfurv0clkkmapr01qkcrcfurvg'; // Finnhub API key
 
-    var { data }  = await axios.get(`https://finnhub.io/api/v1/news`, { //call to finnhub api
-      params: {
-        token: apiKey,
-        category: 'general',
-        minId: 0,
-      },
-    });
-
-    const NavNews = data; //take data into something we can uss
+// app.get('/home', auth, async (req, res) => {
+//   try {
+//     // Temporarily comment out external API calls to isolate the error source
+//     // const apiKey = 'cl9s089r01qk1fmlilp0cl9s089r01qk1fmlilpg';
+//     // const marketStatusResponse = await axios.get('https://finnhub.io/api/v1/stock/market-status', { params: { token: apiKey } });
+//     // const newsResponse = await axios.get('https://finnhub.io/api/v1/news', { params: { token: apiKey, category: 'general', minId: 0, size: 3 } });
     
-    // console.log(NavNews[0].headline); --testing stuff
+//     // Sample data to avoid API calls temporarily
+//     const marketNews = [
+//       { headline: "Sample News 1", image: "sample1.jpg", summary: "Sample summary 1" },
+//       { headline: "Sample News 2", image: "sample2.jpg", summary: "Sample summary 2" },
+//     ];
+//     const accountBalanceQuery = await db.oneOrNone(
+//       `SELECT COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END) -
+//                SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) AS account_balance 
+//        FROM Transactions t WHERE t.user_id = $1;`, 
+//       [req.session.user.user_id]
+//     );
 
-    res.render('pages/learn', { NavNews })
-    //res.json({ stockCandleData, stockSymbol });
-  } catch (error) {
-    console.error('Error fetching stock news:', error.message);
-    res.status(500).send('Internal Server Error');
-  }
-  
- });
+//     const accountBalance = (accountBalanceQuery?.account_balance || 0) + 50000;
 
-//Register endpoint
+//     res.render('pages/home', { user: req.session.user, accountBalance, events: marketNews });
+//   } catch (error) {
+//     console.error('Error fetching data:', error.message);
+//     res.status(500).send('Internal Server Error');
+//   }
+// });
+
+app.get('/register', (req, res) => res.render('pages/register'));
+app.get('/login', (req, res) => res.render('pages/login'));
+
 app.post('/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(req.body.password, 10);
-    const username = req.body.username;
+    const userExists = await db.oneOrNone('SELECT * FROM users WHERE username = $1;', [req.body.username]);
 
-    // Check if the username already exists
-    const checkQuery = 'SELECT * FROM users WHERE username = $1;';
-    const checkResult = await db.oneOrNone(checkQuery, [username]);
+    if (userExists) return res.redirect('/login?error=Username_Exists');
 
-    if (checkResult) {
-      return res.redirect('/login?error=' + encodeURIComponent('Username_Exists'));
-    }
-
-    // Username doesn't exist, proceed with registration
-    const insertQuery = 'INSERT INTO users (username, password) VALUES ($1, $2);';
-    const data = await db.one(insertQuery, [username, hash]);
-
-    // Registration successful, redirect to login with success message
-    // Need to implement success message on UI
+    await db.none('INSERT INTO users (username, password) VALUES ($1, $2);', [req.body.username, hash]);
     res.redirect('/login');
-  } catch (err){
-    // Redirect to registration with error message in case of an error
+  } catch (err) {
     console.error('Error occurred during registration:', err);
     res.redirect('/register');
   }
 });
 
-app.post('/change_password', async (req, res) =>{
-  try{
-      const query = 'SELECT * FROM users WHERE user_id = $1';
-      const userData = await db.oneOrNone(query, [req.session.user.user_id]);
-      const hash = await bcrypt.hash(req.body.password, 10);
-      if (userData) {
-          const insertQuery = 'UPDATE users SET password = $1 WHERE user_id = $2';
-          const data = await db.none(insertQuery, [hash,req.session.user.user_id]);
-          console.log('changed password');
-          res.redirect('/account');
-      }
-    }catch(err){
-      console.error('Error occurred during password change', err);
-      res.redirect('/account');
-    }
-})
-
-// Login endpoint
 app.post('/login', async (req, res) => {
   try {
     const query = 'SELECT * FROM users WHERE username = $1';
@@ -287,140 +157,74 @@ app.post('/login', async (req, res) => {
       const match = await bcrypt.compare(req.body.password, userData.password);
 
       if (match) {
-        // Passwords match, set session and redirect to /invest
         req.session.user = userData;
-        req.session.save();
-        //log user data in session
-        console.log('User data stored in session:', userData);
+        console.log('User logged in successfully:', userData);  // Log success
         res.redirect('/home');
-        //return res.status(200).json({ status: 'success', message: 'Welcome!' });
       } else {
-        // Incorrect password, redirect to register
-        res.redirect('/register?error=' + encodeURIComponent('Incorrect Password'));
-        /*
-        return res.status(400).json({
-          status: 'error',
-          message: 'Incorrect username or password. If you do not have an account, please register.',
-          redirect: '/register', // Include relative redirect in the response
-        });
-        */
+        console.log('Incorrect password for user:', req.body.username);  // Log incorrect password
+        res.redirect('/login?error=Incorrect_Password');
       }
     } else {
-      // User not found, redirect to register
+      console.log('User not found:', req.body.username);  // Log user not found
       res.redirect('/register');
-      /*
-      return res.status(400).json({
-        status: 'error',
-        message: 'Incorrect username or password. If you do not have an account, please register.',
-        redirect: '/register', // Include relative redirect in the response
-      });
-      */
     }
-  }catch(err){
-    console.error('Error occurred during login:', err);
+  } catch (err) {
+    console.error('Error occurred during login:', err);  // Log specific error
     res.status(500).json({
       status: 'error',
-      message: 'Internal Server Error',
+      message: 'Internal Server Error during login',
     });
   }
 });
 
-app.post('/transactShares', async (req, res) => {
-  try{
-    const num_shares = req.body.shares;
-    const share_price = req.body.price;
-    let transact_date = req.body.date;
-    let type = req.body.type;
-    const stock_id = await db.query(`
-      SELECT stock_id
-      FROM Stocks
-      WHERE name = $1
-    `, [req.body.stock_name]);
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.render('pages/landing', { message: "Logged out Successfully" });
+});
 
-    const user_id= await db.query(`
-      SELECT user_id
-      FROM users
-      WHERE user_id = $1
-      `, [req.session.user.user_id]);
+app.get('/account', auth, async (req, res) => {
+  try {
+    const accountBalanceQuery = await db.oneOrNone(
+      `SELECT COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END) -
+               SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) AS account_balance 
+       FROM Transactions t WHERE t.user_id = $1;`,
+      [req.session.user.user_id]
+    );
+    const accountBalance = (accountBalanceQuery?.account_balance || 0) + 50000;
 
-    const result = await db.query(`
-      INSERT INTO Transactions
-        (user_id,
-        stock_id,
-        transaction_type,
-        transaction_date,
-        transaction_price)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [user_id,  stock_id, type, transact_date, share_price]);
+    res.render('pages/account', { user: req.session.user, accountBalance });
+  } catch (error) {
+    console.error('Error fetching account balance:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/change_password', auth, async (req, res) => {
+  try {
+    const hash = await bcrypt.hash(req.body.password, 10);
+    await db.none('UPDATE users SET password = $1 WHERE user_id = $2', [hash, req.session.user.user_id]);
+    res.redirect('/account');
+  } catch (err) {
+    console.error('Error changing password:', err);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/transactShares', auth, async (req, res) => {
+  try {
+    const { shares, price, date, type, stock_name } = req.body;
+    const stock_id = await db.one('SELECT stock_id FROM Stocks WHERE name = $1', [stock_name]);
+    await db.none(
+      `INSERT INTO Transactions (user_id, stock_id, transaction_type, transaction_date, transaction_price) 
+       VALUES ($1, $2, $3, $4, $5)`, 
+      [req.session.user.user_id, stock_id.stock_id, type, date, price * shares]
+    );
     res.send('Transaction completed successfully');
-  }catch (err) {
-    console.error('Unable to buy shares.', err);
+  } catch (err) {
+    console.error('Unable to transact shares:', err);
+    res.status(500).send('Internal Server Error');
   }
 });
-
-const auth = (req, res, next) => {
-  console.log('Session:', req.session); // Log the session information
-  if (!req.session.user) {
-    // Default to login page.
-    return res.redirect('/login');
-  }
-  next();
-};
-
-
-// Authentication Required
-app.use(auth);
-
-app.get('/user', auth, async (req, res) => {
-  try {
-    const userId = req.session.user.user_id;
-    const user = await db.query('SELECT * FROM users WHERE user_id = $1', [userId]);
-  
-    res.json(user);
-  } catch (error) {
-    console.error('Error fetching user information:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-//get transacton information from database
-app.get('/transactions', auth, async (req, res) => {
-  try {
-    const userId = req.session.user.user_id;
-    const result = await db.query('SELECT * FROM transactions WHERE user_id = $1', [userId]);
-    const transactions = result.rows;
-    res.json(transactions);
-  } catch (error) {
-    console.error('Error fetching transaction information:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-app.get('/user_balance', async (req, res) => {
-  try{
-    const user_id = req.session.user.user_id;
-    const result = await db.query(`
-    SELECT
-      COALESCE(SUM(CASE WHEN t.transaction_type = 'sell' THEN t.transaction_price ELSE 0 END), 0) -
-      COALESCE(SUM(CASE WHEN t.transaction_type = 'buy' THEN t.transaction_price ELSE 0 END), 0) AS account_balance
-    FROM
-      Transactions t
-    WHERE
-      t.user_id = $1;
-    `, [user_id]);
-
-    let balance = result.account_balance;
-    if(balance == null) balance = 0;
-    balance = balance + 50000;
-
-    res.json(balance);
-  } catch (error){
-    console.error('Error fetching balance:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-
 app.get('/invest', async (req, res) => {
   try {
     let stockSymbol = req.query.stockSymbol //'AAPL'; // Replace with your desired stock symbol
@@ -475,146 +279,36 @@ app.get('/invest', async (req, res) => {
   }
 });
 
-/*
-
-// API call for stock search
-app.get('/stockData', async (req, res) => {
+app.get('/learn', async (req,res) => {
   try {
-    const stockSymbol = req.query.stockSymbol || 'AAPL'; // Default to 'AAPL' if no symbol is provided
-    const apiKey = 'cl9s089r01qk1fmlilp0cl9s089r01qk1fmlilpg'; // Replace with your Finnhub API key
-    const resolution = 'D'; // Use daily resolution for simplicity
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 3650); // Set fromDate to 10 years ago
+    const apiKey = 'clkkmapr01qkcrcfurv0clkkmapr01qkcrcfurvg'; // Finnhub API key
 
-    const { data } = await axios.get(`https://finnhub.io/api/v1/stock/candle`, {
+    var { data }  = await axios.get(`https://finnhub.io/api/v1/news`, { //call to finnhub api
       params: {
-        symbol: stockSymbol,
         token: apiKey,
-        resolution: resolution,
-        from: Math.floor(fromDate.getTime() / 1000),
-        to: Math.floor(new Date().getTime() / 1000),
+        category: 'general',
+        minId: 0,
       },
     });
-    const stockCandleData = {
-      openPrices: data.o,
-      closePrices: data.c,
-      highPrices: data.h,
-      lowPrices: data.l,
-      timestamps: data.t,
-      volumes: data.v,
-    };
 
-    res.json({ stockCandleData, stockSymbol });
+    const NavNews = data; //take data into something we can uss
+    
+    // console.log(NavNews[0].headline); --testing stuff
+
+    res.render('pages/learn', { NavNews })
+    //res.json({ stockCandleData, stockSymbol });
   } catch (error) {
-    console.error('Error fetching stock candle data:', error.message);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-*/
-
-// API Call for pie chart in Portfolio
-
-// API Call for pie chart in Portfolio
-app.get('/portfolio', async (req, res) => {
-  try {
-    // Define the data object
-    const data = {
-      labels: ['Red', 'Blue', 'Yellow'],
-      datasets: [{
-        label: 'My First Dataset',
-        data: [300, 50, 100],
-        backgroundColor: [
-          'rgb(255, 99, 132)',
-          'rgb(54, 162, 235)',
-          'rgb(255, 205, 86)'
-        ],
-        hoverOffset: 4
-      }]
-    };
-
-    // Configure the chart
-    const config = {
-      type: 'doughnut',
-      data: data,
-    };
-
-    // Send the response
-    res.json(config);
-
-  } catch (error) {
-    console.error(error);
+    console.error('Error fetching stock news:', error.message);
     res.status(500).send('Internal Server Error');
   }
-});
-
-// API Call for top 5 stocks on volume of the day 
-/* WORKING ON IT RN - JON
-app.get('/topStocks', async (req, res) => {
-  try {
-    const apiKey = 'cl9s089r01qk1fmlilp0cl9s089r01qk1fmlilpg'; // Replace with your API key
-    const response = await axios.get('https://financial-data-api.com/api/v1/stock?limit=5&order=volume&apikey=' + apiKey);
-    const topStocks = response.data;
-
-    console.log('Top Stocks:', topStocks); // Log the topStocks data
-
-    res.render('pages/home', { topStocks });
-  } catch (error) {
-    console.error('Error fetching top stocks:', error.message);
-    res.status(500).send('Internal Server Error');
-  }
-});
-
-
-// Invoke API route in home 
-app.get('/home', async (req, res) => {
-  try {
-    // Fetch top 5 stocks with highest volume
-    const response = await axios.get('/topStocks');
-    const topStocks = response.data;
-
-    // Render 'home.ejs' with top stocks data
-    res.render('pages/home', { topStocks });
-  } catch (error) {
-    console.error('Error fetching top stocks:', error.message);
-    res.status(500).send('Internal Server Error');
-  }
-});
-
-*/
-
-
-
-/* MANUAL INPUT OF STOCK SYMBOL 
-app.get('/stockSymbol', (req, res) => {
-  const stockSymbol = 'AAPL';  
-  res.render('menu', { stockSymbol }); 
-});
-*/
-
-
-/* TRY TO RETRIEVE USERNAME FROM USER SESSION WHEN SUCCESSFULLY LOGGED IN
-app.get('/home', (req, res) => {
-  const username = req.session.user ? req.session.user.username : 'Guest';
-  const renderedHTML = res.render('pages/home', { username });
-  console.log('Rendered HTML:', renderedHTML);
-});
-*/
-
-app.get("/logout", (req, res) => {
- req.session.destroy();
- res.render('pages/landing', { message: "Logged out Successfully"});
-});
-
-//dummy API for test
-
-app.get('/welcome', (req, res) => {
-  res.json({status: 'success', message: 'Welcome!'});
-});
+  
+ });
 
 // *****************************************************
-// <!-- Section 5 : Start Server-->
+// <!-- Section 6 : Start Server -->
 // *****************************************************
-// starting the server and keeping the connection open to listen for more requests
-module.exports = app.listen(3000);
-console.log('Server is listening on port 3000');
+
+const PORT = process.env.PORT || 8060;
+app.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}`);
+});
